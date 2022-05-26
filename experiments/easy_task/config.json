@@ -1,0 +1,41 @@
+{
+    "save_path": "experiments/easy_task",
+
+    "env_type": "YesOBJManipulator",
+    "num_arm_joints": 3,
+    "arm_joint_lengths": 10,
+    "ball_goal_height": 13,
+
+    "use_env_reward": true,
+    "success_threshold": 0.7,
+    "reward_self": false,
+
+    "max_steps_in_state": 100,
+    "max_steps": 5000,
+    
+    "num_abstract_states": 8,
+    "option_replay_buffer_size": 100000,
+    "num_abstraction_updates": 20000,
+    "post_abstraction_option_updates": 2000,
+    
+    "option_batch_size": 512,
+    "abstraction_batch_size": 512,
+    
+    "option_gamma": 0.95,
+    "sr_gamma": 0.95,
+    "gumbel_tau": 0.5,
+
+    "option_success_reward": 200,
+    "abstraction_entropy_coef": 25,
+    
+    "option_update_freq": 10,
+    "ddqn_target_update_steps": 20,
+    "log_freq": 2000,
+    "delete_bad_edges": true,
+    "use_gumbel": true,
+    "soft_Q_update": true,
+    "learning_rate": 0.001,
+    "option_entropy_coef": 0.1,
+    "max_iter": 10
+    
+  }
