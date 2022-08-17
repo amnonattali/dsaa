@@ -1,4 +1,5 @@
 README.md
+setup.py
 dsaa_envs.egg-info/PKG-INFO
 dsaa_envs.egg-info/SOURCES.txt
 dsaa_envs.egg-info/dependency_links.txt

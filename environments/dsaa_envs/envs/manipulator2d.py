@@ -83,6 +83,11 @@ class Manipulator2DEnv(gym.Env):
         
         # check obstacle collision, go back to previous location if collision
         col, _, _ = self.detect_collision(self.obstacles)
+        
+        # now check self collision
+        self_col = self.detect_self_collision()
+        col = col or self_col
+        
         reward = 0
         old_movable_object_height = self.movable_objects[0][1]
         if col:
@@ -107,6 +112,8 @@ class Manipulator2DEnv(gym.Env):
         # reward = (self.movable_objects[0][1] - old_movable_object_height)
 
         # self.artist.update_draw()
+        # if self_col:
+        #     done = True
         return self.to_list(), reward, done, {}
 
     def update_config(self, new_config):
@@ -136,6 +143,34 @@ class Manipulator2DEnv(gym.Env):
                     return False
         return True
 
+    def detect_self_collision(self):
+        def diff(A,B,C):
+            return (C[1]-A[1]) * (B[0]-A[0]) - (B[1]-A[1]) * (C[0]-A[0])
+
+        def ccw(A,B,C):
+            # return (C[0]-A[0]) * (B[1]-A[1]) > (B[0]-A[0]) * (C[1]-A[1])
+            return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
+
+        # Return true if line segments AB and CD intersect
+        def intersect(A,B,C,D):
+            return ccw(A,C,D) != ccw(B,C,D) and ccw(A,B,C) != ccw(A,B,D) and abs(diff(A,B,C)) > 0.001
+        
+        for i in range(self.num_joints):
+            for j in range(i+3, self.num_joints):
+                # since the limits are 90 degrees we only need to check joints more than 2 away
+                if abs(i - j) <= 2: # this should never happen cause of the loop limits but ok... 
+                    continue
+                
+                # now check collision between two line segments
+                s1 = self.workspace_config[i]
+                e1 = self.workspace_config[i+1]
+                s2 = self.workspace_config[j]
+                e2 = self.workspace_config[j+1]
+                collide = intersect(s1, e1, s2, e2)
+                if collide:
+                    return True
+        return False
+    
     # detects whether an arm is in collision with circular obstacles
     # uses the workspace configuration
     def detect_collision(self, obstacles):

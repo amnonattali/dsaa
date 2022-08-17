@@ -51,8 +51,10 @@ def train_option_policies(online_Q, target_Q, option_optimizer,
             
             # We disensentivize self-loop edges from transitioning outside the current state
             # TODO: not clear this is necessary (since soft-Q learning implies avoid ending the episode in the absence of reward)
-            reward = reward - 10.0*((abstract_state_nums == skill) * (next_abstract_state_nums != abstract_state_nums)).view(-1,1)
-            
+            reward = reward - 5*((abstract_state_nums == skill) * (next_abstract_state_nums != abstract_state_nums)).view(-1,1)
+            # (1/(1-config["option_gamma"]))*
+            # self_mask = (abstract_state_nums != skill).view(-1,1)
+
             # In the supervised setting we provide the policy with the environment reward for the transition
             if config["reward_self"]: # only reward the self loop option
                 batch_env_reward = (batch_env_reward * (abstract_state_nums == skill)).view(-1,1)
@@ -72,8 +74,9 @@ def train_option_policies(online_Q, target_Q, option_optimizer,
                 else:
                     next_v = torch.max(next_q, dim=1, keepdim=True)[0]
                 # The Temporal-Difference target is r + gamma * next_v * (1-done)
-                q_target = reward + batch_env_reward + config["option_gamma"] * next_v * (1 - batch_done)
-            
+                q_target = (1.0*reward + batch_env_reward + config["option_gamma"] * next_v * (1 - batch_done))
+
+            # loss += F.smooth_l1_loss(current_q.masked_select(self_mask), q_target.masked_select(self_mask))
             loss += F.smooth_l1_loss(current_q, q_target)
             total_r += reward.sum().item()
             q_mean += q_target.sum().item() / config["option_batch_size"]
@@ -114,9 +117,9 @@ def update_abstraction(phi, phi_optimizer, psi, psi_optimizer, replay_buffer, co
             
             if config["use_gumbel"]:
                 # compute abstract states
-                abstract_state = phi.sample(batch_state, tau=config["gumbel_tau"])
+                abstract_state = phi.sample(batch_state, tau=config["gumbel_tau"], hard=config["hard"])
                 with torch.no_grad():
-                    next_abstract_state = phi.sample(batch_next_state, tau=config["gumbel_tau"])
+                    next_abstract_state = phi.sample(batch_next_state, tau=config["gumbel_tau"], hard=config["hard"])
             else:
                 abstract_state = phi(batch_state)
                 next_abstract_state = phi(batch_next_state)
@@ -124,31 +127,38 @@ def update_abstraction(phi, phi_optimizer, psi, psi_optimizer, replay_buffer, co
             # compute the entropy of the distribution of abstract states
             mean_abstract_state_probs = abstract_state.mean(dim=0)
             avg_entropy = (- mean_abstract_state_probs * torch.log(mean_abstract_state_probs)).sum()
-            
+            # indiv_entropy = (- abstract_state * torch.log(abstract_state)).sum(dim=-1).mean()
+            # avg_entropy = avg_entropy - indiv_entropy
+
             # compute the successor representation
             successor_representation = psi(abstract_state)
             
             with torch.no_grad():
                 next_successor_representation = psi(next_abstract_state)
             
+            # state_diff = torch.sum((next_abstract_state - abstract_state.detach())**2, dim=-1, keepdim=True)
             sr_td_loss = ((successor_representation -
                 (abstract_state.detach() + config["sr_gamma"] * next_successor_representation))**2).sum(dim=1).mean()
             
             # NOTE: we can use a one hot representation of the abstract state... doesn't seem to improve things
-            # one_hot_abstract_state = torch.zeros((abstraction_batch_size, num_abstract_states)).scatter_(1, abstract_state_nums, 1.)
+            # abstract_state_nums = torch.argmax(abstract_state, dim=-1, keepdim=True)
+            # abstract_state_nums = torch.argmax(phi(batch_state), dim=-1, keepdim=True)
+            # one_hot_abstract_state = torch.zeros((config["abstraction_batch_size"], config["num_abstract_states"])).scatter_(1, abstract_state_nums, 1.)
             # sr_td_loss = ((successor_representation -
-            #     (one_hot_abstract_state + sr_gamma * next_successor_representation))**2).sum(dim=1).mean()
+            #     (one_hot_abstract_state + config["sr_gamma"] * next_successor_representation))**2).sum(dim=1).mean()
             
             # NOTE: we can apply the loss only to transitions... doesn't seem to improve things
-            # abstract_state_nums = phi.to_num(abstract_state).detach()
-            # next_abstract_state_nums = phi.to_num(next_abstract_state).detach()
-            # sr_td_loss = torch.masked_select(sr_td_loss, abstract_state_nums != next_abstract_state_nums).mean()
-
+            # abstract_state_nums = torch.argmax(abstract_state, dim=1).detach() #phi.to_num(abstract_state).detach()
+            # next_abstract_state_nums = torch.argmax(next_abstract_state, dim=1).detach() #phi.to_num(next_abstract_state).detach()
+            # sr_td_loss = torch.masked_select(sr_td_loss, abstract_state_nums != next_abstract_state_nums)#.mean()
+            
             # NOTE: we can add some more losses... doesn't seem to improve things
             #   such as a contrastive one which encourages transitions to occur where SR changes maximally
             # contrastive_loss = (successor_representation*next_successor_representation).sum(dim=1)
             # contrastive_loss = torch.masked_select(contrastive_loss, abstract_state_nums != next_abstract_state_nums).mean()
 
+            # sr_td_loss = sr_td_loss.sum() / len(sr_td_loss)
+            # print(sr_td_loss.item())
             ent_loss = - config["abstraction_entropy_coef"] * avg_entropy
             abstraction_loss = sr_td_loss + ent_loss
 
@@ -159,10 +169,13 @@ def update_abstraction(phi, phi_optimizer, psi, psi_optimizer, replay_buffer, co
             total_sr_loss += sr_td_loss.item()
             total_entropy_loss += ent_loss.item()
 
-            if abstraction_iter % 1000 == 999:
+            if abstraction_iter % 1000 == 990:
+                with torch.no_grad():
+                    print(torch.argmax(phi(batch_next_state), dim=-1))
+                #     # print(torch.argmax(abstract_state, dim=-1))
                 print("Mean abstract state:", mean_abstract_state_probs.detach())
                 print(f"Abstraction iters {abstraction_iter}, "+
                     f"sr_loss {total_sr_loss / abstraction_iter:3.3f}, "+
                     f"entropy_loss {total_entropy_loss / abstraction_iter:3.3f}")
-                torch.save(phi.state_dict(), "{}/phi.torch".format(config["save_path"]))
-                torch.save(psi.state_dict(), "{}/psi.torch".format(config["save_path"]))
+                # torch.save(phi.state_dict(), "{}/phi.torch".format(config["save_path"]))
+                # torch.save(psi.state_dict(), "{}/psi.torch".format(config["save_path"]))
