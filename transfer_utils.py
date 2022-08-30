@@ -56,7 +56,7 @@ class FourRoomsNoReward(Wrapper):
     def close(self):
         return self.env.close()
 
-# Torch dataset... not actually used
+# Torch dataset...
 class NormalizedTransitionsDataset(Dataset):
     # A transition is a pair of consecutive states (x,x')
     def __init__(self, transitions):
