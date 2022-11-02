@@ -1,7 +1,11 @@
 '''
+**Figure 12 from paper**
+
 Here we test the abstraction when the arm has more than 3 joints
 We use the joint angles as the input
 We visualize by making one image per abstract state and drawing samples of arm positions at those states
+
+TODO: this needs to be cleaned up and incorporated with other experiments
 '''
 
 import gym
@@ -71,7 +75,7 @@ class Arm2DImage(Wrapper):
         return self.env.close()
 
 # TODO: currently the canvas size is configured for 10 joints.... need to fix
-def train():
+def arm2d_many_joints():
     config = {
         "num_abstract_states": 16,
         "num_abstraction_updates": 20000,
@@ -173,4 +177,4 @@ def train():
         torch.save(psi.state_dict(), f"tmp_data/arm2d_psi_{env.env.num_joints}_{config['sr_gamma']}.torch")
             
 if __name__=="__main__":
-    train()
+    arm2d_many_joints()

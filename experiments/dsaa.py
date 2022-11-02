@@ -1,3 +1,7 @@
+'''
+**Figure 7 from paper**
+'''
+
 import random, pickle, torch
 import numpy as np
 
@@ -17,7 +21,7 @@ env_types = {
     "NoOBJManipulator": Manipulator2DNoOBJ
 }
 
-def train(config):
+def dsaa_experiments(config):
     # ------------- INIT -------------
     env = env_types[config["env_type"]](config)
     save_path = config["save_path"]
@@ -272,6 +276,20 @@ def train(config):
         first_iteration = False # first iteration is over
         env_done = True # we want to reset at the beginning of each exploration phase
 
+def run_10_exps(config):
+    all_episode_successes = []
+    for i in range(0,10):
+        torch.manual_seed(i)
+        random.seed(i)
+        np.random.seed(i)
+
+        print("*************Current run (seed):", i)
+        episode_success = dsaa_experiments(config)
+        # pickle.dump(episode_success, open(f"{config['save_path']}/episode_success_seed_{i}.pickle", "wb"))
+        all_episode_successes.append(episode_success)
+
+    pickle.dump(all_episode_successes, open(f"{config['save_path']}/episode_successes.pickle", "wb"))
+
 if __name__ == "__main__":
     from argparse import ArgumentParser
     import json
@@ -294,7 +312,7 @@ if __name__ == "__main__":
             np.random.seed(i)
 
             print("*************Current run (seed):", i)
-            episode_success = train(config)
+            episode_success = dsaa_experiments(config)
             # pickle.dump(episode_success, open(f"{config['save_path']}/episode_success_seed_{i}.pickle", "wb"))
             all_episode_successes.append(episode_success)
 

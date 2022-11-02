@@ -1,13 +1,8 @@
 '''
-Simple test of whether the dsaa model works with image based observations
+**Figure 11 from paper**
 
-We only do one "iteration" of exploration
-- explore environment using random actions (for a long time)
-- gather the *image* state transitions
-- train phi/psi models using this data
-- visualize state space with abstract states colored in
-
-We are only interested in the resulting abstraction and not the corresponding options
+Here we visualize the abstraction when the input is an image (FourRooms)
+TODO: this needs to be cleaned up and incorporated with other experiments
 '''
 
 import gym
@@ -94,7 +89,7 @@ class ConvAbstraction(nn.Module):
 def transform_state(s):
     return (s / 2)*255
 
-def train():
+def fourrooms_img_dsaa():
     config = {
         "num_abstract_states": 8,
         "num_abstraction_updates": 15000,
@@ -177,4 +172,4 @@ def train():
     plt.savefig(f"tmp_data/fourrooms_img_dsaa_{config['num_abstract_states']}.png")
                 
 if __name__=="__main__":
-    train()
+    fourrooms_img_dsaa()

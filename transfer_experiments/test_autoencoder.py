@@ -1,10 +1,14 @@
 '''
+**Figure 9 from paper**
+
 Straightforward implementation of training a variational autoencoder in FourRooms 
 and then clustering states based on their encoding to form discrete abstract states
 --> demonstrates that the resulting abstract states are not conducive to planning
 
-TODO: extend this implementation for arbitrary environments?
-
+TODO: this code is currently repetitive and hard coded
+        - "autoencoder representation" should be incorporated into the main file as a config option
+        - should extend to arbitrary state inputs
+        - "clustering" should be one feature
 '''
 
 from environments.env_wrappers import BaseFourRooms
@@ -175,21 +179,15 @@ class TransitionsDataset(Dataset):
         return len(self.transitions)
 
     def __getitem__(self, idx):
-        # normalize
+        # normalize, TODO: remove hardcoding
         return torch.FloatTensor(self.transitions[idx]) / 18.0
 
 def vae_loss_fn(recon_x, x, mu, logvar):
     BCE = F.binary_cross_entropy(recon_x, x, reduction="sum")
-    # BCE = F.mse_loss(recon_x, x, size_average=False)
-
-    # see Appendix B from VAE paper:
-    # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
-    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
     KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-
     return BCE + KLD, BCE, KLD
 
-def test():
+def autoencoder_main():
     do_conv = False
 
     if do_conv:
@@ -292,4 +290,4 @@ def test():
     plt.savefig(f"tmp_data/autoencoder_abstraction_{num_clusters}.png")
 
 if __name__=="__main__":
-    test()
+    autoencoder_main() # this won't run because of python relative imports

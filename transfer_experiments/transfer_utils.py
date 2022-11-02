@@ -86,7 +86,7 @@ class ContrastiveEncoder(nn.Module):
             nn.Linear(128, 256),
             nn.LeakyReLU(),
             nn.Linear(256, self.z_dim),
-            nn.Sigmoid()
+            # nn.Sigmoid()
         )
     
     def forward(self, obs):
@@ -450,9 +450,12 @@ def get_eigen_options(env_grid, reward_func, num_options, num_epochs=5000, gamma
                 plt.quiver(XY[:,0], XY[:,1], UV[:,0], UV[:,1])
                 state_value = state_value - option_termination[cur_option_num]
                 plt.imshow(state_value)
-                plt.colorbar()
+                plt.xticks(np.arange(0, 19, 2.0))
+                plt.yticks(np.arange(0, 19, 2.0))
+                # plt.colorbar()
                 dir_ = "neg" if dir < 0 else "pos"
-                plt.savefig(f"tmp_data/arrows_{e_vec}_{dir_}.png")
+                plt.savefig(f"tmp_data/arrows_{e_vec}_{dir_}_9_28.png", bbox_inches='tight')
+                plt.savefig(f"tmp_data/arrows_{e_vec}_{dir_}_9_28.svg", bbox_inches='tight', format="svg")
                 plt.clf()
     
     return option_policies, option_termination
@@ -663,11 +666,11 @@ def deep_successor_eigenoptions():
 #   random pairs should be disimilar (assuming random batch we can simply take )
 def contrastive_loss(phi1, phi2):
     consec = ((phi1 - phi2)**2).sum(dim=1).mean()
-    # TODO: magic constant 2... the range of the values in these vectors matters... 
-    rand_pairs = 2*torch.exp(-(torch.abs(phi1[:len(phi1)//2] - phi1[len(phi1)//2:])).sum(dim=1)).mean()
+    # magic constant 2... the range of the values in these vectors matters... 
+    rand_pairs = torch.exp(-(torch.abs(phi1[:len(phi1)//2] - phi1[len(phi1)//2:])).sum(dim=1)).mean()
     return rand_pairs + consec
 
-def train_contrastive_encoder(dataloader, z_dim=3, epochs = 40):
+def train_contrastive_encoder(dataloader, z_dim=3, epochs = 20):
     '''Given a dataloader of transitions in the environment train an encoder using a contrastive'''
     encoder = ContrastiveEncoder(num_input_features=2, z_dim=z_dim)
     encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=1e-3)
@@ -888,9 +891,14 @@ def get_dsaa_indiv_options(env_grid, phi, abstract_adjacency):
                 plt.quiver(XY[:,0], XY[:,1], UV[:,0], UV[:,1])
                 # plt.imshow(env_grid * -1)
                 # plt.imshow(vis)
+                
+                plt.xticks(np.arange(0, 19, 2.0))
+                plt.yticks(np.arange(0, 19, 2.0))
+
                 plt.imshow(state_value)
-                plt.colorbar()
-                plt.savefig(f"tmp_data/dsaa_options_{a_num}_{skill}.png")
+                # plt.colorbar()
+                plt.savefig(f"tmp_data/dsaa_options_{a_num}_{skill}_9_28.png", bbox_inches='tight')
+                plt.savefig(f"tmp_data/dsaa_options_{a_num}_{skill}_9_28.svg", bbox_inches='tight', format="svg")
                 plt.clf()
     return option_policies
 
@@ -975,14 +983,14 @@ def train_dsaa_options(phi, replay_buffer, config):
 # NOTE: current implementation is to follow shortest abstract path to the encoding of the goal, then randomly explore
 def solve_dsaa_task(env, task, phi, option_policies, abstract_adjacency):
     # model data
-    batch_size = 256
+    batch_size = 128
     replay_buffer = ReplayBuffer(20000)
     # model definitisons
     learn_steps = 0
     gamma = 0.95
     target_update_steps = 20
-    online_q = SoftQNetwork(inputs=2, outputs=4, entropy_coef=0.01)
-    target_q = SoftQNetwork(inputs=2, outputs=4, entropy_coef=0.01)
+    online_q = SoftQNetwork(inputs=2, outputs=4, entropy_coef=0.001)
+    target_q = SoftQNetwork(inputs=2, outputs=4, entropy_coef=0.001)
     online_optimizer = torch.optim.Adam(online_q.parameters(), lr=0.001)
     target_q.load_state_dict(online_q.state_dict())
     # get abstract goal
@@ -994,11 +1002,13 @@ def solve_dsaa_task(env, task, phi, option_policies, abstract_adjacency):
     env_done = True
     avg_success = 0
     all_successes = []
+    prev_success = False
     for epoch in range(num_epochs):
         if env_done:
             env_done = False
             option_done = False
-            
+            prev_success = False
+
             state = env.reset()
             with torch.no_grad():
                 abstract_state = phi(torch.FloatTensor(state).view(1,-1))
@@ -1022,18 +1032,16 @@ def solve_dsaa_task(env, task, phi, option_policies, abstract_adjacency):
                 skill = max_reward_path[0][1]
                 # print(a_num, skill, max_reward_path)
 
-            if random.random() < 0.1:
-                action = random.randrange(4)
-            elif skill == a_num:
-                if avg_success > 0.1:
-                    action = online_q.choose_action(state[:2])
-                else:
+            if skill == a_num:
+                if len(replay_buffer) < batch_size or avg_success < 0.1 or random.random()<0.1:
                     action = random.randrange(4)
-                    # action = options.choose_action(state, skill)
-                # action = random.randrange(4)
+                else:
+                    action = online_q.choose_action(state[:2])
             else:
-                # action = options.choose_action(state, skill)
-                action = option_policies[(a_num, skill)][int(state[0]), int(state[1])]
+                if random.random() < 0:
+                    action = random.randrange(4)
+                else:
+                    action = option_policies[(a_num, skill)][int(state[0]), int(state[1])]
                 
             # step in environment... env takes care of structuring state correctly
             next_state, env_reward, env_done, _ = env.step(action)
@@ -1041,6 +1049,7 @@ def solve_dsaa_task(env, task, phi, option_policies, abstract_adjacency):
             env_reward = (next_state == task)*10
             if env_reward > 0:
                 env_done = True
+                prev_success = True
             if env_done:
                 avg_success = 0.95 * avg_success + 0.05 * (env_reward>0)
                 all_successes.append(env_reward > 0)
@@ -1056,7 +1065,8 @@ def solve_dsaa_task(env, task, phi, option_policies, abstract_adjacency):
             option_done = (a_num != next_a_num)
 
             # add experience to replay buffers
-            replay_buffer.add((state[:2], next_state[:2], action, env_reward, env_reward > 0))
+            if skill == a_num: 
+                replay_buffer.add((state[:2], next_state[:2], action, env_reward, env_reward > 0))
             
             # prepare next iteration
             state = next_state
@@ -1064,13 +1074,14 @@ def solve_dsaa_task(env, task, phi, option_policies, abstract_adjacency):
             a_num = next_a_num
 
             # update policy
-            if len(replay_buffer) > batch_size:
-                learn_steps += 1
-                if learn_steps % target_update_steps == 0:
-                    target_q.load_state_dict(online_q.state_dict())
-                Q_learning_update(online_q, target_q, online_optimizer, gamma, replay_buffer, batch_size)
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}, Avg success {avg_success:1.3f}", end="\r")
+            if len(replay_buffer) > batch_size and avg_success > 0:
+                for _ in range(1):
+                    learn_steps += 1
+                    if learn_steps % target_update_steps == 0:
+                        target_q.load_state_dict(online_q.state_dict())
+                    Q_learning_update(online_q, target_q, online_optimizer, gamma, replay_buffer, batch_size)
+        if epoch > 0 and epoch % 10 == 0:
+            print(f"Epoch {epoch}, Avg success {avg_success:1.3f}, Recent 10: {all_successes[-10:]}", end="\r")
 
     return online_q, avg_success, all_successes
 
@@ -1097,16 +1108,57 @@ def Q_learning_update(online_policy, target_policy, online_optimizer, gamma, rep
     online_optimizer.step()
     return online_policy
 
-# make plots of episode successes for DSAA, Eigenoption, and Contrastive
-def process_results():
-    import pickle
-    contrastive = pickle.load(open("tmp_data/episode_success_contrastive.pickle", "rb"))
-    eigenoptions = pickle.load(open("tmp_data/episode_success_eigenoptions.pickle", "rb"))
-    dsaa = pickle.load(open("tmp_data/episode_success_dsaa.pickle", "rb"))
-    c = np.array([t[1] for t in contrastive])
-    e = np.array([t[1] for t in eigenoptions])
-    d = np.array([t[1] for t in dsaa])[:,:-1]
+# explore randomly
+def random_explore(env, task):
+    num_epochs = 500
+    env_done = True
+    avg_success = 0
+    all_successes = []
+    for epoch in range(num_epochs):
+        if env_done:
+            env_done = False
+            state = env.reset()
+        while not env_done:
+            action = random.randrange(4)
+            # step in environment... env takes care of structuring state correctly
+            next_state, env_reward, env_done, _ = env.step(action)
+            env_reward = (next_state == task)*10
+            if env_reward > 0:
+                env_done = True
+                return epoch
+            if env_done:
+                avg_success = 0.95 * avg_success + 0.05 * (env_reward>0)
+                all_successes.append(env_reward > 0)
 
+            # prepare next iteration
+            state = next_state
+        if epoch > 0 and epoch % 10 == 0:
+            print(f"Epoch {epoch}, Avg success {avg_success:1.3f}, Recent 10: {all_successes[-10:]}", end="\r")
+
+    return num_epochs
+
+# make plots of episode successes for DSAA, Eigenoption, and Contrastive
+def process_transfer_results():
+    import pickle
+    contrastive = pickle.load(open("tmp_data/episode_success_contrastive_9_28.pickle", "rb"))
+    eigenoptions = pickle.load(open("tmp_data/episode_success_eigenoptions.pickle", "rb"))
+    dsaa = pickle.load(open("tmp_data/episode_success_dsaa_9_25.pickle", "rb"))
+    random_exploration = pickle.load(open("tmp_data/episode_success_random_9_25.pickle", "rb"))
+
+    random_exploration = np.array([t[1] for t in random_exploration]).clip(0,200)
+    mean_rand = random_exploration.mean()
+    std_rand = random_exploration.std()
+    # print(random_exploration.clip(0,200))
+    print("Mean/std random exploration", mean_rand, std_rand)
+    
+    c = np.array([t[1] for t in contrastive], dtype=float)
+    e = np.array([t[1] for t in eigenoptions], dtype=float)
+    d = np.array([t[1] for t in dsaa], dtype=float)[:,:-1]
+
+    # remove outliers
+    # e = np.delete(e, 23, axis=0)
+    # d = np.delete(d, 8, axis=0)
+    
     print(c.shape, d.shape, e.shape)
 
     first_c = np.argmax(c, axis=1)
@@ -1128,13 +1180,14 @@ def process_results():
     print(f"\tDSAA mean {np.mean(first_d):2.2f}, std {np.std(first_d):2.2f}")
     print(f"\tEigenoptions mean {np.mean(first_e):2.2f}, std {np.std(first_e):2.2f}")
     
-    gamma = 0.9
+    gamma = 0.2#0.9
     for col in range(1, c.shape[1]):
         c[:,col] = c[:,col-1]*gamma + c[:,col]*(1-gamma)
         d[:,col] = d[:,col-1]*gamma + d[:,col]*(1-gamma)
         e[:,col] = e[:,col-1]*gamma + e[:,col]*(1-gamma)
 
-    max_len = 50
+    # print(e[:,50:60])
+    max_len = 100
     c = c[:,:max_len]
     d = d[:,:max_len]
     e = e[:,:max_len]
@@ -1146,14 +1199,15 @@ def process_results():
     mean_c = np.mean(c, axis=0)
     stds_c = np.std(c, axis=0)
     mean_d = np.mean(d, axis=0)
-    stds_d = np.std(c, axis=0)
+    stds_d = np.std(d, axis=0)
     mean_e = np.mean(e, axis=0)
-    stds_e = np.std(c, axis=0)
+    stds_e = np.std(e, axis=0)
     
     x = np.arange(len(mean_c))
-    plt.plot(x, mean_c, label="contrastive", color="blue")
-    plt.plot(x, mean_d, label="dsaa", color="red")
-    plt.plot(x, mean_e, label="eigenoptions", color="green")
+    plt.plot([mean_rand, mean_rand], [0.0, 1.0], label="random", color="black")
+    plt.plot(x, mean_c, linewidth=2.0, label="contrastive", color="blue")
+    plt.plot(x, mean_d, linewidth=2.0, label="dsaa", color="red")
+    plt.plot(x, mean_e, linewidth=2.0, label="eigenoptions", color="green")
     plt.xlabel("Number of Episodes", fontsize=13)
     plt.xticks(fontsize=13)
     plt.yticks(fontsize=13)
@@ -1162,15 +1216,12 @@ def process_results():
     plt.fill_between(x, (mean_c-stds_c).clip(0,1), (mean_c+stds_c).clip(0,1), color="blue", alpha=0.2)
     plt.fill_between(x, (mean_d-stds_d).clip(0,1), (mean_d+stds_d).clip(0,1), color="red", alpha=0.2)
     plt.fill_between(x, (mean_e-stds_e).clip(0,1), (mean_e+stds_e).clip(0,1), color="green", alpha=0.2)
-    plt.savefig("tmp_data/returns.png")
+    
+    # plt.axvline(x=mean_rand, color="black")
+    
+    plt.savefig("tmp_data/returns_9_28_new.png")
+    plt.savefig("tmp_data/returns_9_28_new.svg", format="svg")
     
 
 if __name__=="__main__":
-    # from environments.env_wrappers import BaseFourRooms 
-    # env = BaseFourRooms({"max_steps": 500})
-    # env_grid = env.example_obs[0]
-    # option_policies, option_termination = get_eigen_options(env_grid, 4, True)
-    # print(option_termination[3])
-    # print(option_policies[3])
-
-    process_results()
+    process_transfer_results()

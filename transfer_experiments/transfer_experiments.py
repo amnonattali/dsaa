@@ -1,3 +1,9 @@
+'''
+**Figures 5,6,10 and Table 1 from paper**
+
+Compare DSAA to Eigenoption, Contrastive, and a Baseline in FourRooms *transfer learning task*
+'''
+
 from cmath import exp
 import random
 import numpy as np
@@ -8,13 +14,14 @@ import matplotlib.pyplot as plt
 
 from torch.utils.data import DataLoader
 
-from transfer_utils import FourRoomsNoReward, NormalizedTransitionsDataset, get_eigen_options, \
-    get_eigen_reward, solve_task_with_options, train_dsaa, train_dsaa_options, solve_dsaa_task, \
+# relative python imports... need to fix this properly
+from transfer_experiments.transfer_utils import FourRoomsNoReward, NormalizedTransitionsDataset, get_eigen_options, \
+    get_eigen_reward, random_explore, solve_task_with_options, train_dsaa, train_dsaa_options, solve_dsaa_task, \
         train_contrastive_encoder, solve_contrastive_task, get_dsaa_indiv_options
 
 from utils import ReplayBuffer, get_nbrs
 
-def train(exp_type = "eigenoptions"):
+def transfer_exp(exp_type = "eigenoptions"):
     # ------------- 1. Explore Environment -------------
     env_config = {
         "max_steps": 100000 # no reset
@@ -88,13 +95,15 @@ def train(exp_type = "eigenoptions"):
 
                 plot_points = np.array(plot_points)
                 plt.scatter(plot_points[0,:], plot_points[1, :])
-                plt.savefig("tmp_data/contrastive_2d_encoding.png")
-
+                plt.savefig("tmp_data/contrastive_2d_encoding.png", bbox_inches='tight')
+                plt.savefig("tmp_data/contrastive_2d_encoding.svg", bbox_inches='tight', format="svg")
+    
     elif exp_type == "eigenoptions":
         print("EIGENOPTIONS")
         env_grid = env.example_obs[0]
         eigen_reward = get_eigen_reward(env_grid)
 
+    # return
     # ------------- 3. Train options -------------
     print("**Training Options**")
     if exp_type == "dsaa":
@@ -111,7 +120,9 @@ def train(exp_type = "eigenoptions"):
 
     # ------------- 4. Solve tasks using abstraction -------------
     print("**Training Transfer Policy**")
-    random_seed = 27835849
+    # TODO: for some reason this isn't working properly and the runs are different
+    #           - doesn't matter too much since the results are quite consistent
+    random_seed = 27835849 # mashed keyboard
     torch.manual_seed(random_seed)
     random.seed(random_seed)
     np.random.seed(random_seed)
@@ -122,6 +133,10 @@ def train(exp_type = "eigenoptions"):
     env = FourRoomsNoReward({"max_steps": 200})
     all_successes = []
     for t in tasks:
+        if exp_type == "random":
+            all_successes.append([t, random_explore(env, t)])
+            continue
+
         if exp_type == "dsaa":
             trained_policy, avg_success, task_successes = solve_dsaa_task(env, t, phi, option_policies, abstract_adjacency)
         elif exp_type == "contrastive":
@@ -130,13 +145,13 @@ def train(exp_type = "eigenoptions"):
             trained_policy, avg_success, task_successes = solve_task_with_options(env, t, option_policies, option_termination)
         print(f"Task {t}, Final Avg Success {avg_success:1.3f}")
         all_successes.append([t, task_successes])
-    pickle.dump(all_successes, open(f"tmp_data/episode_success_{exp_type}.pickle", "wb"))
+    pickle.dump(all_successes, open(f"tmp_data/episode_success_{exp_type}_9_28.pickle", "wb"))
 
     return
 
 
 if __name__ == "__main__":
-    train(exp_type = "dsaa")
-    # train(exp_type = "contrastive")
-    # train(exp_type = "eigenoptions")
-    pass
+    # transfer_exp(exp_type = "random")
+    # transfer_exp(exp_type = "dsaa")
+    # transfer_exp(exp_type = "contrastive")
+    transfer_exp(exp_type = "eigenoptions")

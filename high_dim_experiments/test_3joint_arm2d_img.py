@@ -1,3 +1,11 @@
+'''
+**Figure 11 from paper**
+
+Here we visualize the abstraction when the input is an image (Arm2D)
+
+TODO: this needs to be cleaned up and incorporated with other experiments
+'''
+
 import gym
 from gym import Wrapper
 import numpy as np
@@ -138,7 +146,7 @@ class ConvAbstraction(nn.Module):
         abstract_state = self.phi(obs)
         return torch.nn.functional.softmax(abstract_state, dim=-1) + 0.1**16
 
-def train():
+def arm2d_img():
     config = {
         "num_abstract_states": 16,
         "num_abstraction_updates": 20000,
@@ -224,4 +232,4 @@ def train():
         torch.save(psi.state_dict(), f"tmp_data/arm2d_psi_{env.env.num_joints}.torch")
                 
 if __name__=="__main__":
-    train()
+    arm2d_img()
