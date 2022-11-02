@@ -1,37 +1,24 @@
 # Discrete State-Action Abstraction (DSAA)
 
 ## Files:
-- dsaa.py
-- baseline.py
-- torch_models.py
-- update_models.py
-- utils.py
-- vis.py
-- experiments
-    - easy_task
-        - config.json
-    - hard_task
-        - config.json
-- environments
-    - dsaa_envs
-    - setup.py
-    - env_wrappers.py
-- saved_data
-    - saved returns from paper results
-    - some examples of the output from vis.py
 
 ## Instructions for use:
 - install necessary packages (tested with python 3.6)
     - For running experiments: torch (CPU), gym, numpy, pickle
+        - NOTE: our gym environments are not compatible with the newest gym versions. Please use gym==0.18.3
     - For visualization: networkx, matplotlib
 - register dsaa gym packages
     ```console
     $cd environments
     $pip install -e .
     ```
-- run experiments (we provide the Arm2D experiments from Figure 4d in the paper)
+- run transfer experiments
     ```console
-    $python dsaa.py --exp_path=experiments/[easy, hard]_task
+    $python run_experiments.py --experiment=transfer_exp --transfer_exp_type=[dsaa, contrastive, eigenoptions, random]
+    ```
+- run experiments (we provide the Arm2D experiments from Figure 7 in the paper)
+    ```console
+    $python run_experiments.py --experiment=dsaa_experiments --exp_path=experiments/[easy, hard]_task
     ```
 - visualize various results
     ```console
