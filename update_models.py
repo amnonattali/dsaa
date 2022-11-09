@@ -127,6 +127,7 @@ def update_abstraction(phi, phi_optimizer, psi, psi_optimizer, replay_buffer, co
             # compute the entropy of the distribution of abstract states
             mean_abstract_state_probs = abstract_state.mean(dim=0)
             avg_entropy = (- mean_abstract_state_probs * torch.log(mean_abstract_state_probs)).sum()
+            # NOTE: dealing with individual state entropy is unneccesary since the SR loss encourages individual states to be predictable
             # indiv_entropy = (- abstract_state * torch.log(abstract_state)).sum(dim=-1).mean()
             # avg_entropy = avg_entropy - indiv_entropy
 

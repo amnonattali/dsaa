@@ -334,6 +334,86 @@ def get_eigen_reward(env_grid):
     reward_func = lambda s1, s2, e_vec, dir: dir*(Vh[-(e_vec+1)][loc_to_node[tuple(s2)]] - Vh[-(e_vec+1)][loc_to_node[tuple(s1)]])
     return reward_func
 
+def train_fourrooms_option_from_reward(reward_func, option_num, all_states,
+        option_termination, option_policies, gamma, env_grid, num_epochs):
+    # First step is to compute the state value function
+    state_value = np.zeros((19,19))
+    avg_error = 0
+    for epoch in range(num_epochs): # arbitrary large enough constant number of TD update steps
+        for i,j in np.random.permutation(all_states):
+            if env_grid[i,j] == 1:
+                state_value[i, j] = -1
+                continue
+            max_dir = None
+            max_val = -100000
+            actions = [[i-1, j], [i, j+1], [i+1, j], [i, j-1]]
+            for t_i, t_j in actions:
+                if t_i >= 0 and t_j >= 0 and t_i < 19 and t_j < 19:
+                    if env_grid[t_i,t_j] == 1:
+                        reward = reward_func([i,j], [i, j])
+                        tmp_v = reward + gamma * state_value[i, j]
+                    else:
+                        reward = reward_func([i,j], [t_i, t_j])
+                        tmp_v = reward + gamma*state_value[t_i, t_j]
+                    if tmp_v > max_val:
+                        max_val = tmp_v
+                        max_dir = [t_i, t_j]
+
+            target_v = max_val
+            td_error = (target_v - state_value[i, j])
+            state_value[i, j] += 0.01 * td_error
+            avg_error = avg_error*0.99 + 0.01*td_error
+        if epoch % 100 == 0:
+            print(f"{avg_error.item():2.4f}", end="\r")
+    # Now that we have the state value function we can compute the actual option, 
+    #   which is the argmax of state_value of neighbor over each actions at each state
+    XY = np.zeros((19*19, 2))
+    UV = np.zeros((19*19, 2)) # UV is the direction of the action, necessary for plotting results
+    for i in range(state_value.shape[0]):
+        for j in range(state_value.shape[1]):
+            if env_grid[i,j] == 1:
+                continue
+            max_dir = None
+            max_val = -100000
+            max_action = None
+            actions = [[i-1, j], [i, j+1], [i+1, j], [i, j-1]]
+            for action_index, (t_i, t_j) in enumerate(actions):
+                if t_i >= 0 and t_j >= 0 and t_i < 19 and t_j < 19:
+                    if env_grid[t_i,t_j] == 1:
+                        if state_value[i, j] > max_val:
+                            max_val = state_value[i, j]
+                            max_dir = [t_i, t_j]
+                            max_action = action_index
+                    else:
+                        if state_value[t_i, t_j] > max_val:
+                            max_val = state_value[t_i, t_j]
+                            max_dir = [t_i, t_j]
+                            max_action = action_index
+                        
+            XY[i*19 + j] = np.array([j,i])
+            UV[i*19 + j] = np.array([max_dir[1]-j, i - max_dir[0]])
+            # XY[i*19 + j] = np.array([i,j])
+            # UV[i*19 + j] = np.array([max_dir[0]-i, j - max_dir[1]])
+            option_policies[option_num, i, j] = max_action
+    # Now that we have the options computed, we can compute their termination set T
+    #   and the intitiation set is S \ T
+    #   We mark each state as terminal if we don't make progress from it
+    #       NOTE: this is not as in the original paper. This is a more generous definition that avoids dead ends.
+    
+    for i in range(state_value.shape[0]):
+        for j in range(state_value.shape[1]):
+            if env_grid[i,j] == 1:
+                continue
+            cur_dir = UV[i*19 + j]
+            nbr = [i-cur_dir[1], j + cur_dir[0]] #t_i, t_j
+            nbr_dir = UV[int(nbr[0]*19 + nbr[1])]
+            nbr_nbr = [nbr[0]-nbr_dir[1], nbr[1] + nbr_dir[0]]
+            if env_grid[int(nbr[0]), int(nbr[1])] == 1 or (int(nbr_nbr[0]) == i and int(nbr_nbr[1]) == j):
+                #np.abs(cur_dir + nbr_dir).sum() < 0.01:
+                option_termination[option_num, i,j] = 1.0
+    
+    return state_value, (XY, UV)
+
 def get_eigen_options(env_grid, reward_func, num_options, num_epochs=5000, gamma = 0.99, display=False):
     '''Given an eigenoption reward function return the corresponding options in FourRooms
      
@@ -371,80 +451,9 @@ def get_eigen_options(env_grid, reward_func, num_options, num_epochs=5000, gamma
             # First step is to compute the state value function
             cur_option_num = int(e_vec*2 + (dir+1)//2)
             print("e_vec", cur_option_num, e_vec, dir)
-            state_value = np.zeros((19,19))
-            avg_error = 0
-            for epoch in range(num_epochs): # arbitrary large enough constant number of TD update steps
-                for i,j in np.random.permutation(all_states):
-                    if env_grid[i,j] == 1:
-                        state_value[i, j] = -1
-                        continue
-                    max_dir = None
-                    max_val = -100000
-                    actions = [[i-1, j], [i, j+1], [i+1, j], [i, j-1]]
-                    for t_i, t_j in actions:
-                        if t_i >= 0 and t_j >= 0 and t_i < 19 and t_j < 19:
-                            if env_grid[t_i,t_j] == 1:
-                                reward = reward_func([i,j], [i, j], e_vec, dir)
-                                tmp_v = reward + gamma * state_value[i, j]
-                            else:
-                                reward = reward_func([i,j], [t_i, t_j], e_vec, dir)
-                                tmp_v = reward + gamma*state_value[t_i, t_j]
-                            if tmp_v > max_val:
-                                max_val = tmp_v
-                                max_dir = [t_i, t_j]
-
-                    target_v = max_val
-                    td_error = (target_v - state_value[i, j])
-                    state_value[i, j] += 0.01 * td_error
-                    avg_error = avg_error*0.99 + 0.01*td_error
-                if epoch % 100 == 0:
-                    print(f"{avg_error.item():2.4f}", end="\r")
-            # Now that we have the state value function we can compute the actual option, 
-            #   which is the argmax of state_value of neighbor over each actions at each state
-            XY = np.zeros((19*19, 2))
-            UV = np.zeros((19*19, 2)) # UV is the direction of the action, necessary for plotting results
-            for i in range(state_value.shape[0]):
-                for j in range(state_value.shape[1]):
-                    if env_grid[i,j] == 1:
-                        continue
-                    max_dir = None
-                    max_val = -100000
-                    max_action = None
-                    actions = [[i-1, j], [i, j+1], [i+1, j], [i, j-1]]
-                    for action_index, (t_i, t_j) in enumerate(actions):
-                        if t_i >= 0 and t_j >= 0 and t_i < 19 and t_j < 19:
-                            if env_grid[t_i,t_j] == 1:
-                                if state_value[i, j] > max_val:
-                                    max_val = state_value[i, j]
-                                    max_dir = [t_i, t_j]
-                                    max_action = action_index
-                            else:
-                                if state_value[t_i, t_j] > max_val:
-                                    max_val = state_value[t_i, t_j]
-                                    max_dir = [t_i, t_j]
-                                    max_action = action_index
-                                
-                    XY[i*19 + j] = np.array([j,i])
-                    UV[i*19 + j] = np.array([max_dir[1]-j, i - max_dir[0]])
-                    # XY[i*19 + j] = np.array([i,j])
-                    # UV[i*19 + j] = np.array([max_dir[0]-i, j - max_dir[1]])
-                    option_policies[cur_option_num, i, j] = max_action
-            # Now that we have the options computed, we can compute their termination set T
-            #   and the intitiation set is S \ T
-            #   We mark each state as terminal if we don't make progress from it
-            #       NOTE: this is not as in the original paper. This is a more generous definition that avoids dead ends.
-            
-            for i in range(state_value.shape[0]):
-                for j in range(state_value.shape[1]):
-                    if env_grid[i,j] == 1:
-                        continue
-                    cur_dir = UV[i*19 + j]
-                    nbr = [i-cur_dir[1], j + cur_dir[0]] #t_i, t_j
-                    nbr_dir = UV[int(nbr[0]*19 + nbr[1])]
-                    nbr_nbr = [nbr[0]-nbr_dir[1], nbr[1] + nbr_dir[0]]
-                    if env_grid[int(nbr[0]), int(nbr[1])] == 1 or (int(nbr_nbr[0]) == i and int(nbr_nbr[1]) == j):
-                        #np.abs(cur_dir + nbr_dir).sum() < 0.01:
-                        option_termination[cur_option_num, i,j] = 1.0
+            current_reward = lambda s1,s2: reward_func(s1,s2,e_vec,dir)
+            state_value, (XY, UV) = train_fourrooms_option_from_reward(current_reward, cur_option_num, all_states,
+                option_termination, option_policies, gamma, env_grid, num_epochs)
             # We can also visualize the option along with its termination set
             if display:
                 plt.quiver(XY[:,0], XY[:,1], UV[:,0], UV[:,1])
@@ -912,9 +921,9 @@ def train_dsaa(replay_buffer, config):
         "num_abstraction_updates": 10000,
         "abstraction_batch_size": 512,
         "use_gumbel": True,
-        "gumbel_tau": 1.0,
+        "gumbel_tau": 0.8,
         "sr_gamma": 0.95,
-        "abstraction_entropy_coef": 10.0,
+        "abstraction_entropy_coef": 5.0,
         "hard": False,
         "learning_rate": 0.001
     }
@@ -1137,11 +1146,110 @@ def random_explore(env, task):
 
     return num_epochs
 
+# ramesh et al (2019)
+def get_successor_options_reward(data, n_clusters):
+    # 1. Compute the SR for all states (hardcoded for discrete fourrooms)
+    psi = np.zeros((19*19, 19*19))
+    for _ in range(5):
+        perm = np.random.permutation(len(data))
+        one_hot_state = np.zeros(19*19)
+        for cur_idx, p_i in enumerate(perm):
+            state, next_state = data[p_i]
+            # we compute the index of the state in order to update it's SR
+            i = state[0]*19 + state[1]
+            next_i = next_state[0]*19 + next_state[1]
+            # convert to one hot encoding
+            one_hot_state[i] = 1.0
+            psi[i] = psi[i] + 0.1*((one_hot_state + 0.99*psi[next_i]) - psi[i])
+            one_hot_state[i] = 0.0
+            if cur_idx % 10000 == 0:
+                print(cur_idx, end="\r")
+    # remove the rows corresponding to obstacles
+    grid = -1.0*np.all(psi == 0, axis=1).reshape(19,19)
+    
+    psi = psi[~np.all(psi == 0, axis=1)]
+    psi = psi[:, ~np.all(psi == 0, axis=0)]
+    print(f"Number of states should be 8*8*4 + 4 = 260, it is: {psi.shape}")
+    # 2. Cluster (rows) using kmeans++ to get cluster centers in SR space
+    from sklearn.cluster import KMeans
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(psi)
+    # visualize the clusters
+    cur_idx = 0
+    c_centers = np.zeros((n_clusters, 2), dtype=int)
+    cosines = np.zeros(n_clusters) - 1
+    loc_to_node = {}
+    for s_idx, v in enumerate(kmeans.labels_):
+        while grid[cur_idx%19, cur_idx//19] < 0:
+            cur_idx += 1
+        loc_to_node[(cur_idx%19, cur_idx//19)] = s_idx
+        
+        cosine = np.dot(psi[s_idx], kmeans.cluster_centers_[v]) / (np.linalg.norm(psi[s_idx]) * np.linalg.norm(kmeans.cluster_centers_[v]))
+        if cosine > cosines[v]:
+            cosines[v] = cosine
+            c_centers[v] = [cur_idx%19, cur_idx//19]
+        grid[cur_idx%19, cur_idx//19] = v
+        cur_idx += 1
+    # for c in c_centers:
+    #     grid[c[0],c[1]] = n_clusters + 1
+    from matplotlib.patches import Rectangle
+    for c in c_centers:
+        plt.gca().add_patch(Rectangle((c[1]-0.5,c[0]-0.5),1,1,linewidth=2,edgecolor='r',facecolor='none'))
+
+    plt.imshow(grid)
+    
+    plt.savefig(f"rebuttal_imgs/testing_SRoptions_{n_clusters}.png", bbox_inches="tight", format="png")
+    plt.savefig(f"rebuttal_imgs/testing_SRoptions_{n_clusters}.svg", bbox_inches='tight', format="svg")
+    # 3. Train options which find the state most aligned with the cluster center 
+    #       - same principle as eigenoptions but using cluster center vector instead of eigenvector
+    
+    # This is the reward they describe in the paper (doesn't seem to yield the options they say they want)
+    reward_func = lambda s1, s2, center: (psi[loc_to_node[tuple(c_centers[center])]][loc_to_node[tuple(s2)]] - psi[loc_to_node[tuple(c_centers[center])]][loc_to_node[tuple(s1)]])
+    # NOTE: surprisingly this does do better than the one they "want", implemented below
+
+    # This reward yields the options they say they want (options which navigate to the cluster center)
+    # reward_func = lambda s1, s2, center: 1.0*(c_centers[center][0] == s2[0] and c_centers[center][1] == s2[1])
+    
+    # This reward is similar to the one they propose but slightly different - not clear if it is better or worse
+    # reward_func = lambda s1, s2, center: (kmeans.cluster_centers_[center][loc_to_node[tuple(s2)]] - kmeans.cluster_centers_[center][loc_to_node[tuple(s1)]])
+    
+    return reward_func
+
+def get_successor_options(env_grid, reward_func, num_options, num_epochs=5000, gamma = 0.99, display=False):
+    plt.clf()
+    # Now that we have our eigenvectors (i.e., the reward function), we can compute our options
+    xx,yy = np.meshgrid(np.linspace(0,18,19), np.linspace(0,18,19))
+    all_states = np.concatenate([xx.reshape(-1,1), yy.reshape(-1,1)], axis=1).astype(int)
+    # for each option for each state we have an action
+    option_policies = np.zeros((num_options, 19, 19))
+    # (up, right, down, left): dir_to_vec = {0: [-1, 0], 1: [0,1], 2: [1,0], 3: [0,-1]}
+    actions = [[-1, 0], [0, 1], [1, 0], [0, -1]]
+    # for each option for each state we have a 1 or 0
+    option_termination = np.zeros((num_options, 19, 19))
+    for cur_option_num in range(num_options):
+        # First step is to compute the state value function
+        current_reward = lambda s1,s2: reward_func(s1,s2,cur_option_num)
+        state_value, (XY, UV) = train_fourrooms_option_from_reward(current_reward, cur_option_num, all_states,
+            option_termination, option_policies, gamma, env_grid, num_epochs)
+        # We can also visualize the option along with its termination set
+        if display:
+            plt.quiver(XY[:,0], XY[:,1], UV[:,0], UV[:,1])
+            state_value = state_value - option_termination[cur_option_num]
+            plt.imshow(state_value)
+            plt.xticks(np.arange(0, 19, 2.0))
+            plt.yticks(np.arange(0, 19, 2.0))
+            # plt.colorbar()
+            plt.savefig(f"rebuttal_imgs/arrows_SRoptions_{cur_option_num}_paperreward.png", bbox_inches='tight')
+            plt.savefig(f"rebuttal_imgs/arrows_SRoptions_{cur_option_num}_paperreward.svg", bbox_inches='tight', format="svg")
+            plt.clf()
+    
+    return option_policies, option_termination
+
 # make plots of episode successes for DSAA, Eigenoption, and Contrastive
 def process_transfer_results():
     import pickle
     contrastive = pickle.load(open("tmp_data/episode_success_contrastive_9_28.pickle", "rb"))
     eigenoptions = pickle.load(open("tmp_data/episode_success_eigenoptions.pickle", "rb"))
+    SRoptions = pickle.load(open("rebuttal_imgs/episode_success_SRoptions_paperreward_11_9.pickle", "rb"))
     dsaa = pickle.load(open("tmp_data/episode_success_dsaa_9_25.pickle", "rb"))
     random_exploration = pickle.load(open("tmp_data/episode_success_random_9_25.pickle", "rb"))
 
@@ -1154,6 +1262,7 @@ def process_transfer_results():
     c = np.array([t[1] for t in contrastive], dtype=float)
     e = np.array([t[1] for t in eigenoptions], dtype=float)
     d = np.array([t[1] for t in dsaa], dtype=float)[:,:-1]
+    s = np.array([t[1] for t in SRoptions], dtype=float) 
 
     # remove outliers
     # e = np.delete(e, 23, axis=0)
@@ -1164,37 +1273,45 @@ def process_transfer_results():
     first_c = np.argmax(c, axis=1)
     first_d = np.argmax(d, axis=1)
     first_e = np.argmax(e, axis=1)
+    first_s = np.argmax(s, axis=1)
+
     # if it failed then the argmax will be 0, make it 100
     first_c += 50*(c.sum(axis=1) == 0) + 1
     first_d += 50*(d.sum(axis=1) == 0) + 1
     first_e += 50*(e.sum(axis=1) == 0) + 1
+    first_s += 50*(s.sum(axis=1) == 0) + 1
     
     failed_c = (c.sum(axis=1) == 0).sum()
     failed_d = (d.sum(axis=1) == 0).sum()
     failed_e = (e.sum(axis=1) == 0).sum()
-    print(failed_c, failed_d, failed_e)
+    failed_s = (s.sum(axis=1) == 0).sum()
+    print(failed_c, failed_d, failed_e, failed_s)
 
     # print(first_c, first_d, first_e)
     print("Average first occurence of sparse reward:")
     print(f"\tContrastive mean {np.mean(first_c):2.2f}, std {np.std(first_c):2.2f}")
     print(f"\tDSAA mean {np.mean(first_d):2.2f}, std {np.std(first_d):2.2f}")
     print(f"\tEigenoptions mean {np.mean(first_e):2.2f}, std {np.std(first_e):2.2f}")
+    print(f"\tSRoptions mean {np.mean(first_s):2.2f}, std {np.std(first_s):2.2f}")
     
     gamma = 0.2#0.9
     for col in range(1, c.shape[1]):
         c[:,col] = c[:,col-1]*gamma + c[:,col]*(1-gamma)
         d[:,col] = d[:,col-1]*gamma + d[:,col]*(1-gamma)
         e[:,col] = e[:,col-1]*gamma + e[:,col]*(1-gamma)
+        s[:,col] = s[:,col-1]*gamma + s[:,col]*(1-gamma)
 
     # print(e[:,50:60])
     max_len = 100
     c = c[:,:max_len]
     d = d[:,:max_len]
     e = e[:,:max_len]
+    s = s[:,:max_len]
 
     c[:,0] = 0
     d[:,0] = 0
     e[:,0] = 0
+    s[:,0] = 0
 
     mean_c = np.mean(c, axis=0)
     stds_c = np.std(c, axis=0)
@@ -1202,12 +1319,15 @@ def process_transfer_results():
     stds_d = np.std(d, axis=0)
     mean_e = np.mean(e, axis=0)
     stds_e = np.std(e, axis=0)
+    mean_s = np.mean(s, axis=0)
+    stds_s = np.std(s, axis=0)
     
     x = np.arange(len(mean_c))
     plt.plot([mean_rand, mean_rand], [0.0, 1.0], label="random", color="black")
     plt.plot(x, mean_c, linewidth=2.0, label="contrastive", color="blue")
     plt.plot(x, mean_d, linewidth=2.0, label="dsaa", color="red")
     plt.plot(x, mean_e, linewidth=2.0, label="eigenoptions", color="green")
+    plt.plot(x, mean_s, linewidth=2.0, label="successoroptions", color="orange")
     plt.xlabel("Number of Episodes", fontsize=13)
     plt.xticks(fontsize=13)
     plt.yticks(fontsize=13)
@@ -1216,11 +1336,12 @@ def process_transfer_results():
     plt.fill_between(x, (mean_c-stds_c).clip(0,1), (mean_c+stds_c).clip(0,1), color="blue", alpha=0.2)
     plt.fill_between(x, (mean_d-stds_d).clip(0,1), (mean_d+stds_d).clip(0,1), color="red", alpha=0.2)
     plt.fill_between(x, (mean_e-stds_e).clip(0,1), (mean_e+stds_e).clip(0,1), color="green", alpha=0.2)
+    plt.fill_between(x, (mean_s-stds_s).clip(0,1), (mean_s+stds_s).clip(0,1), color="orange", alpha=0.2)
     
     # plt.axvline(x=mean_rand, color="black")
     
-    plt.savefig("tmp_data/returns_9_28_new.png")
-    plt.savefig("tmp_data/returns_9_28_new.svg", format="svg")
+    plt.savefig("rebuttal_imgs/returns_11_9.png")
+    plt.savefig("rebuttal_imgs/returns_11_9.svg", format="svg")
     
 
 if __name__=="__main__":

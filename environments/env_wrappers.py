@@ -62,13 +62,14 @@ class FourRoomsRandomNoise(Wrapper):
         return self.env.close()
 
 class TwoRoomsViz(Wrapper):
-    def __init__(self):
+    def __init__(self, make_two_rooms=True):
         self.env = gym.make('dsaa_envs:fourrooms-v0', max_steps=10000)
         super(TwoRoomsViz, self).__init__(self.env)
         
         self.observation_size = 2
         self.action_size = 4
         self.name = "make_vis"
+        self.make_two_rooms = make_two_rooms
 
     def make_state(self, obs):
         # Make one_hot
@@ -78,8 +79,9 @@ class TwoRoomsViz(Wrapper):
     def reset(self):
         obs = self.env.reset()
         # block off the bottom two rooms
-        self.env.grid[9,4] = 1
-        self.env.grid[9,14] = 1
+        if self.make_two_rooms:
+            self.env.grid[9,4] = 1
+            self.env.grid[9,14] = 1
         return self.make_state(obs)
 
     def step(self, action):

@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 # relative python imports... need to fix this properly
 from transfer_experiments.transfer_utils import FourRoomsNoReward, NormalizedTransitionsDataset, get_eigen_options, \
     get_eigen_reward, random_explore, solve_task_with_options, train_dsaa, train_dsaa_options, solve_dsaa_task, \
-        train_contrastive_encoder, solve_contrastive_task, get_dsaa_indiv_options
+        train_contrastive_encoder, solve_contrastive_task, get_dsaa_indiv_options, get_successor_options, get_successor_options_reward
 
 from utils import ReplayBuffer, get_nbrs
 
@@ -49,7 +49,8 @@ def transfer_exp(exp_type = "eigenoptions"):
     print("**Training Abstraction**")
     if exp_type == "dsaa":
         print("DSAA")
-        phi = train_dsaa(replay_buffer, config={})
+        num_abstract_states = 4
+        phi = train_dsaa(replay_buffer, config={"num_abstract_states": num_abstract_states})
 
         if True:
             env_grid = (env.example_obs == 1)*1.0
@@ -67,8 +68,9 @@ def transfer_exp(exp_type = "eigenoptions"):
                         all_phis[i,j] = torch.argmax(tmp_enc[0])
             
             plt.imshow(all_phis)
-            plt.colorbar()
-            plt.savefig("tmp_data/dsaa_abstraction.png")
+            # plt.colorbar()
+            plt.savefig(f"rebuttal_imgs/dsaa_abstraction_{num_abstract_states}.png", bbox_inches='tight')
+            plt.savefig(f"rebuttal_imgs/dsaa_abstraction_{num_abstract_states}.svg", bbox_inches='tight', format="svg")
 
     elif exp_type == "contrastive":
         print("CONTRASTIVE")
@@ -103,7 +105,11 @@ def transfer_exp(exp_type = "eigenoptions"):
         env_grid = env.example_obs[0]
         eigen_reward = get_eigen_reward(env_grid)
 
-    # return
+    elif exp_type == "SRoptions":
+        print("SUCCESSOR OPTIONS")
+        num_clusters = 16
+        successor_options_reward = get_successor_options_reward(data, num_clusters)
+
     # ------------- 3. Train options -------------
     print("**Training Options**")
     if exp_type == "dsaa":
@@ -117,6 +123,10 @@ def transfer_exp(exp_type = "eigenoptions"):
     elif exp_type == "eigenoptions":
         num_options = 8
         option_policies, option_termination = get_eigen_options(env_grid, eigen_reward, num_options, display=True)
+
+    elif exp_type == "SRoptions":
+        env_grid = env.example_obs[0]
+        option_policies, option_termination = get_successor_options(env_grid, successor_options_reward, num_clusters, display=True)
 
     # ------------- 4. Solve tasks using abstraction -------------
     print("**Training Transfer Policy**")
@@ -141,11 +151,12 @@ def transfer_exp(exp_type = "eigenoptions"):
             trained_policy, avg_success, task_successes = solve_dsaa_task(env, t, phi, option_policies, abstract_adjacency)
         elif exp_type == "contrastive":
             trained_policy, avg_success, task_successes = solve_contrastive_task(env, t, contrastive_encoder)
-        elif exp_type == "eigenoptions":
+        elif exp_type == "eigenoptions" or exp_type == "SRoptions":
             trained_policy, avg_success, task_successes = solve_task_with_options(env, t, option_policies, option_termination)
+        
         print(f"Task {t}, Final Avg Success {avg_success:1.3f}")
         all_successes.append([t, task_successes])
-    pickle.dump(all_successes, open(f"tmp_data/episode_success_{exp_type}_9_28.pickle", "wb"))
+    pickle.dump(all_successes, open(f"rebuttal_imgs/episode_success_{exp_type}_paperreward_11_9.pickle", "wb"))
 
     return
 
