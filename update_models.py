@@ -171,8 +171,10 @@ def update_abstraction(phi, phi_optimizer, psi, psi_optimizer, replay_buffer, co
             total_entropy_loss += ent_loss.item()
 
             if abstraction_iter % 1000 == 990:
+                # config["gumbel_tau"] = max(0.9*config["gumbel_tau"], 1.0)
+                # config["abstraction_entropy_coef"] = max(0.95*config["abstraction_entropy_coef"], 1.0)
                 with torch.no_grad():
-                    print(torch.argmax(phi(batch_next_state), dim=-1))
+                    print(torch.argmax(phi(batch_next_state), dim=-1)[:100])
                 #     # print(torch.argmax(abstract_state, dim=-1))
                 print("Mean abstract state:", mean_abstract_state_probs.detach())
                 print(f"Abstraction iters {abstraction_iter}, "+

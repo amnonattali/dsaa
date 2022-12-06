@@ -919,18 +919,19 @@ def train_dsaa(replay_buffer, config):
     dsaa_config = {
         "num_abstract_states": 4,
         "num_abstraction_updates": 10000,
-        "abstraction_batch_size": 512,
+        "abstraction_batch_size": 1024,
         "use_gumbel": True,
-        "gumbel_tau": 0.8,
-        "sr_gamma": 0.95,
-        "abstraction_entropy_coef": 5.0,
+        "gumbel_tau": 1.5,
+        "sr_gamma": 0.9,
+        "abstraction_entropy_coef": 10.0,
         "hard": False,
-        "learning_rate": 0.001
+        "learning_rate": 0.001,
+        "obs_size": 2
     }
     dsaa_config.update(config)
 
     # initialize abstraction model
-    phi = Abstraction(obs_size=2, num_abstract_states=dsaa_config["num_abstract_states"])
+    phi = Abstraction(obs_size=dsaa_config["obs_size"], num_abstract_states=dsaa_config["num_abstract_states"])
     phi_optimizer = torch.optim.Adam(phi.parameters(), lr=dsaa_config["learning_rate"])
     # initialize successor representation
     psi = SuccessorRepresentation(dsaa_config["num_abstract_states"])
@@ -1343,6 +1344,60 @@ def process_transfer_results():
     plt.savefig("rebuttal_imgs/returns_11_9.png")
     plt.savefig("rebuttal_imgs/returns_11_9.svg", format="svg")
     
+
+
+def montezuma_test(data, img_data):
+    # from skimage.metrics import structural_similarity
+    import cv2
+    import numpy as np
+    from environments.env_wrappers import MontezumaNoReward
+
+    env = MontezumaNoReward({})
+    num_abstract_states = 16
+    phi = Abstraction(obs_size=env.observation_size, num_abstract_states=num_abstract_states)
+    # phi.load_state_dict(torch.load("new_code/imgs/phi.torch"))
+    phi.load_state_dict(torch.load("rebuttal_imgs/phi.torch"))
+
+    all_states = torch.FloatTensor(data)[:,1,:]
+    print(all_states.shape)
+
+    with torch.no_grad():
+        abstract_states = torch.argmax(phi(all_states), dim=-1)
+    # num_unique = len(torch.unique(abstract_states))
+
+    beta = 0.95
+    num_rows = num_abstract_states//4
+    vis = [None for _ in range(num_abstract_states)]
+    fig, ax = plt.subplots(nrows=num_rows, ncols=4, figsize=(num_rows*5,20), gridspec_kw = {'hspace':0.1})
+    # print("WHAT IS HAPPENING")
+    for a, img in zip(abstract_states, img_data):
+        # print("HELLO")
+        if vis[a] is None:
+            ax[a%num_rows,a//num_rows].imshow(img)
+            vis[a] = True
+            # print(vis[a])
+            ax[a%num_rows, a//num_rows].set_axis_off()
+        else:
+            face = list(zip(*np.where(img.sum(axis=-1)==450)))
+            # print("face")
+            if len(face) == 0:
+                continue
+            circle1 = plt.Circle((face[0][1], face[0][0]), 2.0, color='r', alpha=0.05)
+            ax[a%num_rows,a//num_rows].add_patch(circle1)
+
+        
+        # if vis[a] is None:
+        #     vis[a] = img
+        # else:
+        #     vis[a] = cv2.addWeighted(vis[a], beta, img, beta, 0)
+
+    # for i in range(16):
+    #     if not vis[i] is None:
+    #         ax[i%4, i//4].imshow(vis[i])
+    #     ax[i%4, i//4].set_axis_off()
+
+    plt.savefig("new_code/imgs/blended_abstract_paper.png")
+    plt.savefig("new_code/imgs/blended_abstract_paper.svg", format="svg")
 
 if __name__=="__main__":
     process_transfer_results()

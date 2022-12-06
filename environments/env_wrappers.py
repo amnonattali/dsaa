@@ -2,6 +2,34 @@ import random, gym, torch
 from gym import Wrapper
 import numpy as np
 
+#-------------------
+class MontezumaNoReward(Wrapper):
+    def __init__(self, config):
+        env = gym.make("MontezumaRevenge-ram-v4")
+        super(MontezumaNoReward, self).__init__(env)
+        self.example_obs = env.reset()
+
+        self.observation_size = 128
+        self.action_size = 18
+        self.preprocessors = []
+        self.name = "MZ_ram"
+
+    def get_image(self):
+        return self.env.render(mode="rgb_array")
+
+    def reset(self):
+        obs = self.env.reset()
+        return obs.tolist()
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return obs.tolist(), 0, done, info
+
+    def close(self):
+        return self.env.close()
+#-------------------
+
+
 # the environment fourrooms-v0 returns a grid with 2 for agent location, 1 for obstacle, 0 for free
 def obs_to_loc(obs):
     obs = torch.tensor(obs, dtype=torch.float).view(1,1,obs.shape[-2], obs.shape[-1])

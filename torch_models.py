@@ -27,6 +27,8 @@ class Abstraction(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(128, 256),
             nn.LeakyReLU(),
+            # nn.Linear(256, 256),
+            # nn.LeakyReLU(),
             nn.Linear(256, self.num_abstract_states),
         )
     

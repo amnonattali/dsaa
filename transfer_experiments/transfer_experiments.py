@@ -17,16 +17,21 @@ from torch.utils.data import DataLoader
 # relative python imports... need to fix this properly
 from transfer_experiments.transfer_utils import FourRoomsNoReward, NormalizedTransitionsDataset, get_eigen_options, \
     get_eigen_reward, random_explore, solve_task_with_options, train_dsaa, train_dsaa_options, solve_dsaa_task, \
-        train_contrastive_encoder, solve_contrastive_task, get_dsaa_indiv_options, get_successor_options, get_successor_options_reward
+        train_contrastive_encoder, solve_contrastive_task, get_dsaa_indiv_options, \
+            get_successor_options, get_successor_options_reward, montezuma_test
 
 from utils import ReplayBuffer, get_nbrs
+
+from environments.env_wrappers import MontezumaNoReward
 
 def transfer_exp(exp_type = "eigenoptions"):
     # ------------- 1. Explore Environment -------------
     env_config = {
-        "max_steps": 100000 # no reset
+        "max_steps": 200000 # no reset
     }
-    env = FourRoomsNoReward(env_config)
+    # env = FourRoomsNoReward(env_config)
+    env = MontezumaNoReward(env_config)
+    img_data = []
 
     print("**Exploring Environment**")
     data = []
@@ -37,22 +42,30 @@ def transfer_exp(exp_type = "eigenoptions"):
         next_state , _, done, _ = env.step(action)
         # print(state)
         data.append([state, next_state])
-        
+        img_data.append(env.get_image())
+
         replay_buffer.add((state, next_state, action, 0, 0))
         
-        if False:#done:
+        if done:
             state = env.reset()
         else:
             state = next_state
     print("num samples:", len(replay_buffer))
     # ------------- 2. Train abstraction -------------
+
+    montezuma_test(data, img_data)
+    exit()
+
     print("**Training Abstraction**")
     if exp_type == "dsaa":
         print("DSAA")
-        num_abstract_states = 4
-        phi = train_dsaa(replay_buffer, config={"num_abstract_states": num_abstract_states})
-
-        if True:
+        num_abstract_states = 16
+        phi = train_dsaa(replay_buffer, 
+                        config={"num_abstract_states": num_abstract_states, 
+                                "obs_size": env.observation_size,
+                                "num_abstraction_updates": 40000})
+        torch.save(phi.state_dict(), "rebuttal_imgs/phi_5.torch")
+        if False:
             env_grid = (env.example_obs == 1)*1.0
             # print(env_grid)
             with torch.no_grad():
@@ -110,6 +123,7 @@ def transfer_exp(exp_type = "eigenoptions"):
         num_clusters = 16
         successor_options_reward = get_successor_options_reward(data, num_clusters)
 
+    return
     # ------------- 3. Train options -------------
     print("**Training Options**")
     if exp_type == "dsaa":
