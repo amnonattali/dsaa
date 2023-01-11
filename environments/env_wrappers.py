@@ -17,7 +17,7 @@ class MontezumaNoReward(Wrapper):
     def get_image(self):
         return self.env.render(mode="rgb_array")
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         obs = self.env.reset()
         return obs.tolist()
 
@@ -44,20 +44,48 @@ class BaseFourRooms(Wrapper):
         max_steps = config["max_steps"]
         env = gym.make('dsaa_envs:fourrooms-v0', max_steps=max_steps)
         super(BaseFourRooms, self).__init__(env)
-        self.example_obs = env._make_obs()
+        self.example_obs = env.make_obs()
 
         self.observation_size = 2
         self.action_size = 4
         self.preprocessors = [obs_to_loc]
         self.name = "four_rooms"
 
-    def reset(self):
-        obs = self.env.reset()
-        return obs_to_loc(obs)
+    def reset(self, seed=None, options=None):
+        obs, info = self.env.reset()
+        return obs_to_loc(obs), info
 
     def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return obs_to_loc(obs), reward, done, info
+        obs, reward, term, trunc, info = self.env.step(action)
+        return obs_to_loc(obs), reward, term, trunc, info
+
+    def close(self):
+        return self.env.close()
+
+# Basic FourRooms environment
+#   state is the [x,y] coordinate of the agent
+#   actions are in [0-3], to move the agent in each of 4 directions
+#   reward is always zero
+# TODO: consolidate this into BaseFourRooms with no_env_reward as a parameter
+class FourRoomsNoReward(Wrapper):
+    def __init__(self, config):
+        max_steps = config["max_steps"]
+        env = gym.make('dsaa_envs:fourrooms-v0', max_steps=max_steps, no_env_reward=True)
+        super(FourRoomsNoReward, self).__init__(env)
+        self.example_obs = env.make_obs()
+
+        self.observation_size = 2
+        self.action_size = 4
+        self.preprocessors = [obs_to_loc]
+        self.name = "four_rooms"
+
+    def reset(self, seed=None, options=None):
+        obs, info = self.env.reset()
+        return obs_to_loc(obs), info
+
+    def step(self, action):
+        obs, reward, term, trunc, info = self.env.step(action)
+        return obs_to_loc(obs), 0, term, trunc, info
 
     def close(self):
         return self.env.close()
@@ -68,7 +96,7 @@ class FourRoomsRandomNoise(Wrapper):
         max_steps = config["max_steps"]
         env = gym.make('dsaa_envs:fourrooms-v0', max_steps=max_steps)
         super(FourRoomsRandomNoise, self).__init__(env)
-        self.example_obs = env._make_obs()
+        self.example_obs = env.make_obs()
 
         self.observation_size = 3
         self.action_size = 4
@@ -78,13 +106,13 @@ class FourRoomsRandomNoise(Wrapper):
     def add_bit(self, x):
         return obs_to_loc(x) + [100*random.random()]
 
-    def reset(self):
-        obs = self.env.reset()
-        return self.add_bit(obs)
+    def reset(self, seed=None, options=None):
+        obs, info = self.env.reset()
+        return self.add_bit(obs), info
 
     def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return self.add_bit(obs), reward, done, info
+        obs, reward, term, trunc, info = self.env.step(action)
+        return self.add_bit(obs), reward, term, trunc, info
 
     def close(self):
         return self.env.close()
@@ -104,22 +132,23 @@ class TwoRoomsViz(Wrapper):
         obs = torch.tensor(obs, dtype=torch.float).view(obs.shape[-2], obs.shape[-1]).flatten()
         return list(1.0*(obs == 2).numpy())
         
-    def reset(self):
-        obs = self.env.reset()
+    def reset(self, seed=None, options=None):
+        obs, info = self.env.reset()
         # block off the bottom two rooms
         if self.make_two_rooms:
             self.env.grid[9,4] = 1
             self.env.grid[9,14] = 1
-        return self.make_state(obs)
+        return self.make_state(obs), info
 
     def step(self, action):
-        obs, reward, done, info = self.env.step(action)
+        obs, reward, term, trunc, info = self.env.step(action)
         state = self.make_state(obs)
-        return state, reward, done, info
+        return state, reward, term, trunc, info
 
 # The basic manipulator environment in which 
 #   we preprocess the reward based on desired task
 #   we preprocess the state to append the movable object
+# TODO: need to update this to new gym etc.
 class Manipulator2D(Wrapper):
     def __init__(self, config):
         self.num_joints = config["num_arm_joints"]
@@ -140,7 +169,7 @@ class Manipulator2D(Wrapper):
     def make_obs(self, obs):
         return list(np.concatenate((obs, self.env.movable_objects[0][:2]), axis=0))
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         return self.make_obs(self.env.reset())
 
     def step(self, action):
@@ -152,6 +181,7 @@ class Manipulator2D(Wrapper):
         return self.env.close()
 
 # Here we do not append the object to the state
+# TODO: need to update this to new gym etc.
 class Manipulator2DNoOBJ(Wrapper):
     def __init__(self, config):
         self.num_joints = config["num_arm_joints"]
@@ -171,7 +201,7 @@ class Manipulator2DNoOBJ(Wrapper):
     def make_obs(self, obs):
         return list(obs)
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         return self.make_obs(self.env.reset())
 
     def step(self, action):

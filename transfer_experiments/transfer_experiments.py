@@ -15,57 +15,59 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 # relative python imports... need to fix this properly
-from transfer_experiments.transfer_utils import FourRoomsNoReward, NormalizedTransitionsDataset, get_eigen_options, \
+from transfer_experiments.transfer_utils import NormalizedTransitionsDataset, get_eigen_options, \
     get_eigen_reward, random_explore, solve_task_with_options, train_dsaa, train_dsaa_options, solve_dsaa_task, \
         train_contrastive_encoder, solve_contrastive_task, get_dsaa_indiv_options, \
             get_successor_options, get_successor_options_reward, montezuma_test
 
 from utils import ReplayBuffer, get_nbrs
 
-from environments.env_wrappers import MontezumaNoReward
+from environments.env_wrappers import MontezumaNoReward, FourRoomsNoReward
 
 def transfer_exp(exp_type = "eigenoptions"):
     # ------------- 1. Explore Environment -------------
     env_config = {
         "max_steps": 200000 # no reset
     }
-    # env = FourRoomsNoReward(env_config)
-    env = MontezumaNoReward(env_config)
-    img_data = []
+    env = FourRoomsNoReward(env_config)
+    # env = MontezumaNoReward(env_config)
+    # img_data = []
 
     print("**Exploring Environment**")
     data = []
     replay_buffer = ReplayBuffer(env_config["max_steps"])
-    state = env.reset()
+    state, _ = env.reset()
     for _ in range(env_config["max_steps"]):
         action = env.action_space.sample()
-        next_state , _, done, _ = env.step(action)
-        # print(state)
+        next_state , _, term, trunc, _ = env.step(action)
+        
         data.append([state, next_state])
-        img_data.append(env.get_image())
+        # img_data.append(env.get_image())
 
         replay_buffer.add((state, next_state, action, 0, 0))
-        
-        if done:
-            state = env.reset()
+        if term:
+            print("ERROR: environment should have no reward")
+        if trunc:
+            state, _ = env.reset()
         else:
             state = next_state
     print("num samples:", len(replay_buffer))
     # ------------- 2. Train abstraction -------------
 
-    montezuma_test(data, img_data)
-    exit()
+    # montezuma_test(data, img_data)
+    # exit()
 
     print("**Training Abstraction**")
     if exp_type == "dsaa":
         print("DSAA")
-        num_abstract_states = 16
+        num_abstract_states = 4
         phi = train_dsaa(replay_buffer, 
                         config={"num_abstract_states": num_abstract_states, 
                                 "obs_size": env.observation_size,
-                                "num_abstraction_updates": 40000})
-        torch.save(phi.state_dict(), "rebuttal_imgs/phi_5.torch")
-        if False:
+                                "num_abstraction_updates": 5000,
+                                "gumbel_tau": 0.75})
+        # torch.save(phi.state_dict(), "rebuttal_imgs/phi_5.torch")
+        if True:
             env_grid = (env.example_obs == 1)*1.0
             # print(env_grid)
             with torch.no_grad():
@@ -82,8 +84,8 @@ def transfer_exp(exp_type = "eigenoptions"):
             
             plt.imshow(all_phis)
             # plt.colorbar()
-            plt.savefig(f"rebuttal_imgs/dsaa_abstraction_{num_abstract_states}.png", bbox_inches='tight')
-            plt.savefig(f"rebuttal_imgs/dsaa_abstraction_{num_abstract_states}.svg", bbox_inches='tight', format="svg")
+            plt.savefig(f"tmp_save/dsaa_abstraction_{num_abstract_states}.png", bbox_inches='tight')
+            # plt.savefig(f"tmp_save/dsaa_abstraction_{num_abstract_states}.svg", bbox_inches='tight', format="svg")
 
     elif exp_type == "contrastive":
         print("CONTRASTIVE")

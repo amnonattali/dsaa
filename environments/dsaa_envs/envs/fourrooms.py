@@ -17,17 +17,18 @@ class FourRoomsEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, size=19, max_steps=100, goal=None, no_env_reward=False):
-        # print(size, max_steps, goal)
+        print(f"Initialized FourRoomsEnv with size {size} grid, max_steps {max_steps}")
         self.max_steps = max_steps
         self.loc_goal = goal
         self.no_env_reward = no_env_reward
+        print("Env type: ", end="")
         if self.no_env_reward:
             print("Unsupervised environment")
         elif self.loc_goal is None:
             print("Goal is fourth room")
+            self.goal = 3
         else:
             print("Goal is:", self.loc_goal)
-        print("Max steps:", self.max_steps)
 
         self.width = size
         self.height = size
@@ -35,22 +36,10 @@ class FourRoomsEnv(gym.Env):
         # make the grid
         self._make_grid()
         
-        # turn left, turn right, forward
+        # move up, right, down, left
         self.action_space = spaces.Discrete(4)
-        # free/wall/agent
-        '''
-        self.grid_space = spaces.Box(
-            low=0,
-            high=2,
-            shape=(self.height, self.width, 1),
-            dtype='uint8'
-        )
-        self.observation_space = spaces.Dict({
-            'image': self.grid_space,
-            #'direction': spaces.Discrete(4)
-        })
-        '''
-        
+        self.dir_to_vec = {0: [-1, 0], 1: [0,1], 2: [1,0], 3: [0,-1]}
+        # 0=free, 1=wall, 2=agent
         self.observation_space = spaces.Box(
             low=0,
             high=255,
@@ -58,16 +47,16 @@ class FourRoomsEnv(gym.Env):
             dtype='uint8'
         )
         
-        #self.observation_space = spaces.Box(low=0, high=19, shape=(2,))
-    
-        # Initialize the state
+        # Initialize the environemnt
         self.reset()
         
         self.viewer = None
-        
+    
+    # create a numpy grid of 4 connected rooms
+    # NOTE: self.grid does not contain the agent location, this is stored in self.agent
     def _make_grid(self):
         # zero means free space
-        self.grid = np.zeros(shape=(self.height, self.width))
+        self.grid = np.zeros(shape=(self.height, self.width), dtype=np.uint8)
 
         # surrounding walls
         self.grid[0, :] = 1
@@ -85,12 +74,12 @@ class FourRoomsEnv(gym.Env):
         self.grid[self.height // 4, self.width // 2] = 0
         self.grid[3*self.height // 4, self.width // 2] = 0
     
-    def _is_free(self, pos):
-        return self.grid[pos[0], pos[1]] == 0
+    # check if a specific [x,y] position is free (=0)
     def is_free(self, pos):
         return self.grid[pos[0], pos[1]] == 0
     
-    def _is_goal(self, pos):
+    # the goal can either be a room or a location in the grid
+    def is_goal(self, pos):
         if not self.loc_goal is None: 
             if pos[0] == self.loc_goal[0] and pos[1] == self.loc_goal[1]:
                 return True
@@ -106,74 +95,62 @@ class FourRoomsEnv(gym.Env):
             return True
         return False
     
+    # step returns obs, reward, terminated, truncated, info
     def step(self, action):
-        # never eat sour wheat
-        dir_to_vec = {0: [-1, 0], 1: [0,1], 2: [1,0], 3: [0,-1]}
-
         self.step_count += 1
-
         reward = 0
-        done = False
+        terminated = False
+        # this is the new agent location - still need to check whether it is in free space
+        tmp_pos = self.agent_pos[:2] + self.dir_to_vec[action]
         
-        tmp_pos = self.agent_pos[:2] + dir_to_vec[action]
-        # this while loop means always move
-        # while not self._is_free(tmp_pos):
-        #     rand_act = random.randint(0,3)
-        #     tmp_pos = self.agent_pos[:2] + dir_to_vec[rand_act]
+        # can add noise to action and/or ensure always moving
+        if False:
+            while not self.is_free(tmp_pos):
+                rand_act = random.randint(0,3)
+                tmp_pos = self.agent_pos[:2] + self.dir_to_vec[rand_act]
 
-        if self._is_free(tmp_pos):
+        # if new position is free updated agent position
+        if self.is_free(tmp_pos):
             self.agent_pos[:2] = np.copy(tmp_pos)
-            reward -= 0.0
         else:
-            done = False
-            #reward -= 1
+            terminated = False # can end episode upon hitting walls...
+            # reward -= 1 # can penalize hitting walls...
             
-        
-        if self._is_goal(self.agent_pos):
-            done = True
-            reward += 1
-        
-        obs = self._make_obs()
-        
-        #reward += 0.1*(self.agent_pos[0] + self.agent_pos[1])
+        # if no reward 
         if self.no_env_reward:
-            done = False
             reward = 0
-
+        # check if reached goal
+        elif self.is_goal(self.agent_pos):
+            terminated = True
+            reward += 1
+        truncated = False
         if self.step_count >= self.max_steps:
-            done = True
+            truncated = True
         
-        return obs, reward, done, {}
+        obs = self.make_obs()
+        return obs, reward, terminated, truncated, {}
     
-    def _make_obs_2(self):
-        grid_copy = np.copy(self.grid).reshape(self.height, self.width, 1)
-        grid_copy[self.agent_pos[0], self.agent_pos[1]] = 2
-        return {'image': grid_copy} #, 'direction': self.agent_pos[2]}
-    def _make_obs(self):
+    # copy the agent location into the grid
+    # call this method to create an actual observation
+    def make_obs(self):
         grid_copy = np.copy(self.grid).reshape(1, self.height, self.width)
         grid_copy[0, self.agent_pos[0], self.agent_pos[1]] = 2
         return grid_copy
-    def _make_obs_3(self):
-        return self.agent_pos[:2]
-        
-    # set a goal
-    # set the agent position and orientation randomly in the grid, not in goal
-    def reset(self):
-        
-        #self.goal = np.random.randint(4)
-        # hard code goal for now
-        self.goal = 3
-        
-        pos = np.random.randint(low=(0,0,0), high=(self.height, self.width, 4), size=3)
-        while not self._is_free(pos) or self._is_goal(pos):
-            pos = np.random.randint(low=(0,0,0), high=(self.height, self.width, 4), size=3)
-        pos = np.array([2,2,0])
-
-        self.agent_pos = pos
-        self.step_count = 0
-        
-        return self._make_obs()
     
+    # reset the agent position and step count
+    def reset(self, seed=None, options=None):
+        pos = np.array([2,2])
+        # TODO: can set starting position randomly - make this an input setting
+        if False:
+            pos = np.random.randint(low=(0,0), high=(self.height, self.width), size=2)
+            while not self.is_free(pos) or self.is_goal(pos):
+                pos = np.random.randint(low=(0,0), high=(self.height, self.width), size=2)
+        self.agent_pos = pos
+        self.step_count = 0        
+        # reset returns (observation, info)
+        return self.make_obs(), {}
+    
+    # TODO: haven't looked at this in a while, not clear it works
     def render(self, mode='human'):
         # Compute the total grid size
         width_px = self.width * TILE_SIZE

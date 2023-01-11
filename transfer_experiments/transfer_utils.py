@@ -29,33 +29,6 @@ Eigenoption:    Machado, M. C., Rosenbaum, C., Guo, X., Liu, M., Tesauro, G., & 
 
 '''
 
-# Basic FourRooms environment
-#   state is the [x,y] coordinate of the agent
-#   actions are in [0-3], to move the agent in each of 4 directions
-#   reward is always zero
-class FourRoomsNoReward(Wrapper):
-    def __init__(self, config):
-        max_steps = config["max_steps"]
-        env = gym.make('dsaa_envs:fourrooms-v0', max_steps=max_steps, no_env_reward=True)
-        super(FourRoomsNoReward, self).__init__(env)
-        self.example_obs = env._make_obs()
-
-        self.observation_size = 2
-        self.action_size = 4
-        self.preprocessors = [obs_to_loc]
-        self.name = "four_rooms"
-
-    def reset(self):
-        obs = self.env.reset()
-        return obs_to_loc(obs)
-
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return obs_to_loc(obs), 0, done, info
-
-    def close(self):
-        return self.env.close()
-
 # Torch dataset...
 class NormalizedTransitionsDataset(Dataset):
     # A transition is a pair of consecutive states (x,x')
@@ -473,10 +446,7 @@ def get_eigen_options(env_grid, reward_func, num_options, num_epochs=5000, gamma
 # implementation of eigenoptions using the deep successor representation 
 #   train VAE and use encoding to compute the empirical successor matrix
 #   then find it's right eigenvectors...
-def deep_successor_eigenoptions():
-    # ------------- INIT -------------
-    env = FourRoomsNoReward({"max_steps": 500})
-
+def deep_successor_eigenoptions(env):
     # explore randomly to gather data
     print("**Exploring**")
     data = []

@@ -56,7 +56,7 @@ class Manipulator2DEnv(gym.Env):
     def to_list(self):
         return list(self.config)
     
-    def reset(self):
+    def reset(self, seed=None, options=None):
         self.config = np.zeros(self.num_joints)
         self.update_workspace_config() # do we care about workspace config?
         self.step_count = 0
